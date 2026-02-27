@@ -1,0 +1,208 @@
+services:
+  auth:
+    build:
+      context: .
+      target: production
+    container_name: auth
+    env_file:
+      - ./.env
+    ports:
+      - 8080:8080
+      - 8081:8081
+    networks:
+      - backend
+    restart: always
+    depends_on:
+      user-db:
+        condition: service_healthy
+      token-db:
+        condition: service_healthy
+
+  user-db:
+    image: postgres:18-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: blob
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - 5433:5432
+    networks:
+      - backend
+    volumes:
+      - ./configs/postgre/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [ CMD, pg_isready, -U, postgres, -d, blob ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+      start_interval: 15s
+    tty: true
+    stdin_open: true
+    restart: always
+
+  pg-admin:
+    image: dpage/pgadmin4:9.12
+    container_name: postgre-admin-panel
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - 5051:80
+    networks:
+      - backend
+    restart: unless-stopped
+    depends_on:
+      user-db:
+        condition: service_healthy
+
+  token-db:
+    image: redis:8.6-alpine
+    container_name: redis
+    environment:
+      REDIS_PASSWORD: password
+      REDIS_USER: backend
+      REDIS_USER_PASSWORD: backend
+    volumes:
+      - ./configs/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./configs/redis/users.acl:/usr/local/etc/redis/users.acl:ro
+      - redis-data:/data
+    command: [ redis-server, /usr/local/etc/redis/redis.conf ]
+    ports:
+      - 6379:6379
+    networks:
+      - backend
+    healthcheck:
+      test: [ CMD, redis-cli, -a, password, ping ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+      start_interval: 10s
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: prometheus
+    volumes:
+      - ./configs/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    hostname: prometheus
+    command:
+      - --web.enable-remote-write-receiver
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - 9090:9090
+    restart: unless-stopped
+    networks:
+      - backend
+    environment:
+      TZ: "Europe/Moscow"
+
+  tempo:
+    image: grafana/tempo:main-61fafe5
+    container_name: tempo
+    command:
+      - -config.file=/etc/tempo.yml
+    volumes:
+      - ./configs/tempo/tempo.yml:/etc/tempo.yml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - 3200:3200
+      - 4320:4317 # gRPC
+      - 9411:9411
+      - 14268:14268
+    networks:
+      - backend
+    depends_on:
+      - prometheus
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: loki
+    environment:
+      TZ: Europe/Moscow
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./configs/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    ports:
+      - 3100:3100
+    networks:
+      - backend
+
+  alloy:
+    image: grafana/alloy:v1.13.1
+    container_name: alloy
+    privileged: true
+    volumes:
+      - ./configs/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    ports:
+      - 4317:4317
+      - 4318:4318
+      - 12345:12345
+    networks:
+      - backend
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: true
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_FEATURE_TOGGLES_ENABLE: tempoApmTable
+    user: root
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    volumes:
+      - ./configs/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - grafana-data:/var/lib/grafana
+    hostname: grafana
+    restart: unless-stopped
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    name: postgres_volume
+  pgadmin-data:
+    name: pgadmin_volume
+  redis-data:
+    name: redis_volume
+  loki-data:
+    name: loki_volume
+  grafana-data:
+    name: grafana_volume
+  tempo-data:
+    name: tempo_volume
+  prometheus-data:
+    name: prometheus_volume

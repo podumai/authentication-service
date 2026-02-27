@@ -1,0 +1,17 @@
+edition = "2023";
+
+import "google/protobuf/empty.proto";
+
+package auth;
+
+import "user_credentials/user_credentials.proto";
+import "token_pair/token_pair.proto";
+
+option go_package = "github.com/podumai/authentication_service/proto/auth";
+
+service Auth {
+  rpc Login(UserCredentials) returns (TokenPair);
+  rpc Register(UserCredentials) returns (google.protobuf.Empty);
+  rpc Refresh(TokenPair) returns (TokenPair);
+  rpc ChangePassword(UserCredentials) returns (google.protobuf.Empty);
+}
