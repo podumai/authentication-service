@@ -1,0 +1,49 @@
+edition = "2023";
+
+import "google/api/field_behavior.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+package auth;
+
+option go_package = "github.com/podumai/authentication_service/internal/api/grpc/auth";
+
+// TokenPair Transfer information about access/refresh token pair
+message TokenPair {
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_schema) = {
+    json_schema: {
+      title: "TokenPair"
+      description: "Transfer information about access/refresh token pair"
+      required: [
+        "access_token",
+        "refresh_token"
+      ]
+    }
+    example: "{\"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwZXJtcyI6WyJyZWFkIiwid3JpdGUiXSwiaXNzIjoiYXV0aC1zZXJ2aWNlIiwic3ViIjoiMSIsImF1ZCI6WyJhaS1hc3Npc3RhbnQtYXBwIl0sImV4cCI6MTc3MjIyMTM1NSwiaWF0IjoxNzcyMjIwNDU1fQ.sLKvwgrPluAY-WPeRCHdaqfL65C5rXEPT3V2WEIe-Io\", \"refresh_token\": \"4e4edca8-7d29-4080-b126-3133607138e6\"}"
+  };
+
+  string access_token = 1 [
+    json_name = "access_token",
+    (google.api.field_behavior) = REQUIRED,
+    (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+      title: "access_token"
+      description: "Access token for user validation"
+      required: "true"
+      format: "string"
+      pattern: "[a-zA-Z0-9-]+\\.[a-zA-Z0-9-]+\\.[a-zA-Z0-9-]+"
+      example: "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwZXJtcyI6WyJyZWFkIiwid3JpdGUiXSwiaXNzIjoiYXV0aC1zZXJ2aWNlIiwic3ViIjoiMSIsImF1ZCI6WyJhaS1hc3Npc3RhbnQtYXBwIl0sImV4cCI6MTc3MjIyMTM1NSwiaWF0IjoxNzcyMjIwNDU1fQ.sLKvwgrPluAY-WPeRCHdaqfL65C5rXEPT3V2WEIe-Io\""
+    }
+  ];
+  
+  string refresh_token = 2 [
+    json_name = "refresh_token",
+    (google.api.field_behavior) = REQUIRED,
+    (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_field) = {
+      title: "refresh_token"
+      description: "Refresh token for generating new pair of access/refresh tokens"
+      required: "true"
+      format: "string"
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      example: "\"4e4edca8-7d29-4080-b126-3133607138e6\""
+    }
+  ];
+}

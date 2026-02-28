@@ -5,3 +5,7 @@ LICENSE
 .gitignore
 .github/
 api/
+third_party/
+swagger/
+proto/
+gen/

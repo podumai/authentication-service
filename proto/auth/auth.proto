@@ -1,17 +1,96 @@
 edition = "2023";
 
 import "google/protobuf/empty.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
 
 package auth;
 
-import "user_credentials/user_credentials.proto";
-import "token_pair/token_pair.proto";
+import "auth/user_credentials.proto";
+import "auth/token_pair.proto";
 
-option go_package = "github.com/podumai/authentication_service/proto/auth";
+option go_package = "github.com/podumai/authentication_service/internal/api/grpc/auth";
 
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  info: {
+    title: "Authentication Service API"
+    version: "1.0.0"
+    contact: {
+      name: "Kirill Morozov"
+      email: "kirillsm05@gmail.com"
+    }
+    license: {
+      name: "Apache License 2.0"
+      url: "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  }
+  schemes: HTTP
+  schemes: HTTPS
+  consumes: "application/json"
+  produces: "application/json"
+  tags: {
+    name: "Auth"
+    description: "Internal service for authentication and authorization"
+  }
+};
+
+// Authentication Service definition for basic auth
 service Auth {
-  rpc Login(UserCredentials) returns (TokenPair);
-  rpc Register(UserCredentials) returns (google.protobuf.Empty);
-  rpc Refresh(TokenPair) returns (TokenPair);
-  rpc ChangePassword(UserCredentials) returns (google.protobuf.Empty);
+  option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_tag) = {
+    name: "Auth"
+    description: "Internal service for authentication and authorization"
+  };
+
+  // Login Verifies the user credentials and responds with access/refresh token pair
+  rpc Login(UserCredentials) returns (TokenPair) {
+    option (google.api.http) = {
+      post: "/v1/login"
+    };
+
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Authenticates and authorizes user";
+      description: "Involves the process of authentication and authorization with further access/refresh token respond";
+      tags: "Auth";
+    };
+  }
+
+  // Register Creates new user record
+  rpc Register(UserCredentials) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/register"
+    };
+
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Registers new user"
+      description: "Creates new user if not exists"
+      tags: "Auth"
+    };
+  }
+
+  // Refresh Validates given tokens and respond with new access/refresh token pair
+  rpc Refresh(TokenPair) returns (TokenPair) {
+    option (google.api.http) = {
+      post: "/v1/refresh"
+    };
+
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Create new token pair"
+      description: "Validates given access/refresh token pair and produces new"
+      tags: "Auth"
+    };
+  }
+
+  // ChangePassword Provides ability to change password if user with such credentials exists
+  rpc ChangePassword(UserCredentials) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/v1/user/password"
+    };
+
+    option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_operation) = {
+      summary: "Change password for user"
+      description: "Provides the ability to change user password"
+      tags: "Auth"
+    };
+  }
 }

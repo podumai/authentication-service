@@ -18,6 +18,18 @@ services:
       token-db:
         condition: service_healthy
 
+  swagger:
+    image: swaggerapi/swagger-ui:v5.32.0
+    container_name: swagger
+    environment:
+      SWAGGER_JSON: /app/auth.swagger.json
+    volumes:
+      - ./swagger:/app:ro
+    ports:
+      - 8083:8080
+    networks:
+      - backend
+
   user-db:
     image: postgres:18-alpine
     container_name: postgres

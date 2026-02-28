@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"authentication_service/internal/api/grpc/proto/auth"
+	"authentication_service/internal/api/grpc/auth"
 	"authentication_service/internal/service"
 	"context"
 	"fmt"

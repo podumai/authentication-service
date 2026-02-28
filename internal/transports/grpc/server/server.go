@@ -1,7 +1,7 @@
 package server
 
 import (
-	"authentication_service/internal/api/grpc/proto/auth"
+	"authentication_service/internal/api/grpc/auth"
 	"authentication_service/internal/api/grpc/server/interceptor"
 	"authentication_service/internal/config"
 	"authentication_service/internal/database"
