@@ -1,0 +1,273 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Authentication Service API",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Kirill Morozov",
+      "email": "kirillsm05@gmail.com"
+    },
+    "license": {
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  },
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Internal service for authentication and authorization"
+    }
+  ],
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/login": {
+      "post": {
+        "summary": "Authenticates and authorizes user",
+        "description": "Involves the process of authentication and authorization with further access/refresh token respond",
+        "operationId": "Auth_Login",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/authTokenPair"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "email",
+            "description": "email\n\nEmail address for user validation",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+          },
+          {
+            "name": "password",
+            "description": "password\n\nPassword for user validation",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/refresh": {
+      "post": {
+        "summary": "Create new token pair",
+        "description": "Validates given access/refresh token pair and produces new",
+        "operationId": "Auth_Refresh",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/authTokenPair"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "access_token",
+            "description": "access_token\n\nAccess token for user validation",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": "[a-zA-Z0-9-]+\\.[a-zA-Z0-9-]+\\.[a-zA-Z0-9-]+"
+          },
+          {
+            "name": "refresh_token",
+            "description": "refresh_token\n\nRefresh token for generating new pair of access/refresh tokens",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/register": {
+      "post": {
+        "summary": "Registers new user",
+        "description": "Creates new user if not exists",
+        "operationId": "Auth_Register",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "email",
+            "description": "email\n\nEmail address for user validation",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+          },
+          {
+            "name": "password",
+            "description": "password\n\nPassword for user validation",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/user/password": {
+      "post": {
+        "summary": "Change password for user",
+        "description": "Provides the ability to change user password",
+        "operationId": "Auth_ChangePassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "email",
+            "description": "email\n\nEmail address for user validation",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+          },
+          {
+            "name": "password",
+            "description": "password\n\nPassword for user validation",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "format": "string",
+            "pattern": ".+"
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "authTokenPair": {
+      "type": "object",
+      "example": {
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwZXJtcyI6WyJyZWFkIiwid3JpdGUiXSwiaXNzIjoiYXV0aC1zZXJ2aWNlIiwic3ViIjoiMSIsImF1ZCI6WyJhaS1hc3Npc3RhbnQtYXBwIl0sImV4cCI6MTc3MjIyMTM1NSwiaWF0IjoxNzcyMjIwNDU1fQ.sLKvwgrPluAY-WPeRCHdaqfL65C5rXEPT3V2WEIe-Io",
+        "refresh_token": "4e4edca8-7d29-4080-b126-3133607138e6"
+      },
+      "properties": {
+        "access_token": {
+          "type": "string",
+          "format": "string",
+          "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwZXJtcyI6WyJyZWFkIiwid3JpdGUiXSwiaXNzIjoiYXV0aC1zZXJ2aWNlIiwic3ViIjoiMSIsImF1ZCI6WyJhaS1hc3Npc3RhbnQtYXBwIl0sImV4cCI6MTc3MjIyMTM1NSwiaWF0IjoxNzcyMjIwNDU1fQ.sLKvwgrPluAY-WPeRCHdaqfL65C5rXEPT3V2WEIe-Io",
+          "description": "Access token for user validation",
+          "title": "access_token",
+          "pattern": "[a-zA-Z0-9-]+\\.[a-zA-Z0-9-]+\\.[a-zA-Z0-9-]+"
+        },
+        "refresh_token": {
+          "type": "string",
+          "format": "string",
+          "example": "4e4edca8-7d29-4080-b126-3133607138e6",
+          "description": "Refresh token for generating new pair of access/refresh tokens",
+          "title": "refresh_token",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      },
+      "description": "Transfer information about access/refresh token pair",
+      "title": "TokenPair",
+      "required": [
+        "access_token",
+        "refresh_token",
+        "true"
+      ]
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  }
+}

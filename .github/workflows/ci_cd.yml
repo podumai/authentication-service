@@ -1,0 +1,224 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ 'feature/*', 'fix/*', 'master' ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
+
+  pull_request:
+    branches: [ 'dev' ]
+    types: [ opened, synchronize, reopened ]
+
+env:
+  GO_VERSION: 1.25.6
+  APP_NAME: authentication-service
+  GHCR_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  quick-check:
+    name: 🔍 Quick Check
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feature/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      
+      - name: Quick lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          only-new-issues: true
+          args: --fast
+
+      - name: Quick tests
+        run: go test -short ./...
+
+  pr-check:
+    name: 🔍 PR Validation
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install protoc
+        run: |
+          sudo apt update
+          sudo apt install -y protobuf-compiler
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Generate protobuf
+        run: make deps
+
+      - name: Check git diff (generated files should be committed)
+        run: |
+          if [[ -n $(git status -s) ]]; then
+            echo "❌ Generated files are not committed!"
+            git status
+            exit 1
+          fi
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m --out-format=colored-line-number
+          only-new-issues: true
+
+      - name: Run tests with coverage
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.txt
+          flags: pr-${{ github.event.number }}
+
+      - name: Comment PR with coverage
+        uses: romeovs/lcov-reporter-action@v0.3.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          lcov-file: ./coverage.txt
+
+  pr-required-checks:
+    name: ✅ Required Checks
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    needs: [pr-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?: ]]; then
+            echo "❌ PR title must follow conventional commits format"
+            exit 1
+          fi
+
+      - name: Check branch name
+        run: |
+          BRANCH_NAME="${{ github.head_ref }}"
+          if [[ ! "$BRANCH_NAME" =~ ^(feature|fix|hotfix)/ ]]; then
+            echo "❌ Branch name must start with feature/, fix/, or hotfix/"
+            exit 1
+          fi
+
+  pr-build:
+    name: 🐳 Build PR Image
+    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    needs: [pr-check]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: |
+            ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:pr-${{ github.event.number }}
+          labels: |
+            pr=${{ github.event.number }}
+            commit=${{ github.sha }}
+
+      - name: Comment PR with image info
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const comment = `
+            ✅ **PR #${prNumber} built successfully!**
+            
+            Image: \`ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:pr-${prNumber}\`
+            Commit: ${context.sha}
+            
+            You can test this image with:
+            \`\`\`bash
+            docker pull ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:pr-${prNumber}
+            \`\`\`
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  dev-merge:
+    name: 🚀 DEV Post-Merge
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: [pr-check, pr-required-checks, pr-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push dev image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: development
+          tags: |
+            ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:dev-latest
+            ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:dev-${{ github.sha }}
+
+  master-release:
+    name: 🎯 Master Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Cloning repository
+        uses: actions/checkout@v4
+      
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --repo="$GITHUB_REPOSITORY" \
+            --title="Release $tag" \
+            --generate-notes
