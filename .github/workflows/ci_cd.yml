@@ -2,15 +2,15 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ 'feature/*', 'fix/*', 'master' ]
+    branches: [ 'feature/*', 'fix/*', 'dev', 'master' ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - '.github/**'
 
   pull_request:
-    branches: [ 'dev' ]
-    types: [ opened, synchronize, reopened ]
+    branches: [ 'dev', 'master' ]
+    types: [ opened, synchronize, reopened, closed ]
 
 env:
   GO_VERSION: 1.25.6
@@ -118,7 +118,7 @@ jobs:
 
   pr-build:
     name: 🐳 Build PR Image
-    if: github.event_name == 'pull_request' && github.base_ref == 'dev'
+    if: github.event_name == 'pull_request' && (github.base_ref == 'dev' || github.base_ref == 'master')
     needs: [pr-check]
     runs-on: ubuntu-latest
     permissions:
@@ -203,22 +203,145 @@ jobs:
             ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:dev-latest
             ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:dev-${{ github.sha }}
 
-  master-release:
-    name: 🎯 Master Release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+  master-pr-check:
+    name: 🎯 Master pull request check
+    if: github.event_name == 'pull_request' && github.base_ref == 'refs/heads/master' && github.head_ref == 'dev'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Cloning repository
         uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
       
-      - name: Create release
+      - name: Run full test suite
+        run: |
+          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+          go test -bench=. ./...
+      
+      - name: Run security checks
+        run: |
+          go vet ./...
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec ./...
+      
+      - name: Check version bump
+        run: |
+          git fetch origin dev:dev
+          DEV_VERSION=$(git show dev:VERSION 2>/dev/null || echo "none")
+          CURRENT_VERSION=$(cat VERSION 2>/dev/null || echo "none")
+          
+          if [ "$DEV_VERSION" = "none" ] || [ "$CURRENT_VERSION" = "none" ]; then
+            echo "⚠️ Version files not found, skipping version check"
+          elif [ "$DEV_VERSION" = "$CURRENT_VERSION" ]; then
+            echo "❌ Version must be increased for master release"
+            exit 1
+          fi
+    
+  master-release:
+    name: 🎯 Master Release
+    if: github.event_name == 'pull_request' && github.base_ref == 'master' && github.head_ref == 'dev' && github.event.pull_request.merged == true
+    needs: [master-pr-check, pr-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+    
+    steps:
+      - name: Cloning repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ -f VERSION ]; then
+            VERSION=$(cat VERSION)
+          else
+            VERSION="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "release_version=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Build production binaries
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -o dist/${{ env.APP_NAME }}-linux-amd64 ./cmd/app
+          GOOS=darwin GOARCH=amd64 go build -o dist/${{ env.APP_NAME }}-darwin-amd64 ./cmd/app
+          GOOS=windows GOARCH=amd64 go build -o dist/${{ env.APP_NAME }}-windows-amd64.exe ./cmd/app
+          tar -czf dist/${{ env.APP_NAME }}-${{ steps.get_version.outputs.release_version }}.tar.gz dist/
+
+      - name: Build and push production Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          target: production
+          tags: |
+            ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:latest
+            ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:${{ steps.get_version.outputs.release_version }}
+            ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:${{ github.sha }}
+          labels: |
+            version=${{ steps.get_version.outputs.release_version }}
+            commit=${{ github.sha }}
+            date=${{ github.event.pull_request.merged_at }}
+
+      - name: Create Git tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a ${{ steps.get_version.outputs.version }} -m "Release ${{ steps.get_version.outputs.version }}"
+          git push origin ${{ steps.get_version.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          body: |
+            ## 🚀 Release ${{ steps.get_version.outputs.version }}
+            
+            ### 📦 What's Changed
+            ${{ github.event.pull_request.body }}
+            
+            ### 🔍 PR Details
+            - **PR:** #${{ github.event.pull_request.number }}
+            - **Author:** @${{ github.event.pull_request.user.login }}
+            - **Merged by:** @${{ github.event.pull_request.merged_by.login }}
+            - **Commits:** ${{ github.event.pull_request.commits }}
+            - **Files changed:** ${{ github.event.pull_request.changed_files }}
+            
+            ### 📦 Artifacts
+            - Docker image: `ghcr.io/${{ env.GHCR_OWNER }}/${{ env.APP_NAME }}:${{ steps.get_version.outputs.release_version }}`
+            - Binaries attached to this release
+            
+            ### 📝 Full Changelog
+            https://github.com/${{ github.repository }}/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.merge_commit_sha }}
+          files: |
+            dist/${{ env.APP_NAME }}-${{ steps.get_version.outputs.release_version }}.tar.gz
+            dist/${{ env.APP_NAME }}-linux-amd64
+            dist/${{ env.APP_NAME }}-darwin-amd64
+            dist/${{ env.APP_NAME }}-windows-amd64.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" \
-            --repo="$GITHUB_REPOSITORY" \
-            --title="Release $tag" \
-            --generate-notes
