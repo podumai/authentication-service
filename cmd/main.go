@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		logger.Fatal(err.Error())
 	}
-	defer tracerService.Shutdown(ctx)
+	defer tracerService.Shutdown(ctx) //nolint:errcheck
 
 	db, err := database.NewDatabase(&database.Opts{
 		Config: cfg.Database,
@@ -53,19 +53,21 @@ func main() {
 	if err != nil {
 		logger.Fatal(err.Error())
 	}
-	defer cacheService.Close()
+	defer cacheService.Close() //nolint:errcheck
 
 	userService := service.NewUserService(&service.UserServiceOpts{
 		Database: db,
 		Cache:    cacheService,
+		Logger:   logger,
 	})
 	if err != nil {
 		logger.Fatal("user-service", slog.Field{Key: "error", Value: err})
 	}
-	defer userService.Shutdown()
+	defer userService.Shutdown() //nolint:errcheck
 
 	tokenService := service.NewTokenService(&service.TokenOpts{
 		Database: db,
+		Logger:   logger,
 	})
 
 	healthService := service.NewHealthService(&service.HealthServiceOpts{
@@ -88,7 +90,7 @@ func main() {
 			stop()
 		}
 	}()
-	defer httpServer.Server.Shutdown(ctx)
+	defer httpServer.Server.Shutdown(ctx) //nolint:errcheck
 
 	grpcServer := server.NewGRPCServer(&server.Opts{
 		Config:       cfg.GRPCServer,

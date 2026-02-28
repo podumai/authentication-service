@@ -12,6 +12,7 @@ deps:
 				 --openapiv2_opt=logtostderr=true \
 				 --experimental_editions \
 				 ./proto/auth/*.proto
+	@cp -rv ./internal/api/grpc/auth/* ./gateway/auth/
 
 .PHONY: build-prod-image
 build-prod-image:

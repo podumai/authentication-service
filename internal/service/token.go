@@ -2,6 +2,7 @@ package service
 
 import (
 	"authentication_service/internal/database"
+	"authentication_service/internal/logger"
 	"context"
 	"database/sql"
 	"errors"
@@ -22,7 +23,8 @@ type TokenService interface {
 }
 
 type tokenService struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger logger.Logger
 }
 
 func (ts *tokenService) Insert(ctx context.Context, key string, token string) error {
@@ -40,7 +42,7 @@ func (ts *tokenService) Insert(ctx context.Context, key string, token string) er
 	if err != nil {
 		return err
 	}
-	defer trx.Rollback()
+	defer safeRollback(trx, ts.logger)
 
 	_, err = trx.ExecContext(ctx, insertTokenQuery, key, token)
 	if err != nil {
@@ -69,7 +71,7 @@ func (ts *tokenService) Remove(ctx context.Context, key string, token string) er
 	if err != nil {
 		return err
 	}
-	defer trx.Rollback()
+	defer safeRollback(trx, ts.logger)
 
 	result, err := trx.ExecContext(ctx, removeTokenQuery, key, token)
 	if err != nil {
@@ -91,10 +93,12 @@ func (ts *tokenService) Remove(ctx context.Context, key string, token string) er
 
 type TokenOpts struct {
 	Database database.DatabaseService
+	Logger   logger.Logger
 }
 
 func NewTokenService(opts *TokenOpts) TokenService {
 	return &tokenService{
-		db: opts.Database.DB(),
+		db:     opts.Database.DB(),
+		logger: opts.Logger,
 	}
 }

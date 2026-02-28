@@ -4,9 +4,12 @@ import (
 	"authentication_service/internal/cache"
 	"authentication_service/internal/database"
 	"authentication_service/internal/database/model"
+	"authentication_service/internal/logger"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -25,13 +28,15 @@ type UserService interface {
 }
 
 type userService struct {
-	db    *gorm.DB
-	cache cache.CacheService
+	db     *gorm.DB
+	cache  cache.CacheService
+	logger logger.Logger
 }
 
 type UserServiceOpts struct {
 	Database database.DatabaseService
 	Cache    cache.CacheService
+	Logger   logger.Logger
 }
 
 const (
@@ -44,8 +49,20 @@ const (
 
 func NewUserService(opts *UserServiceOpts) UserService {
 	return &userService{
-		db:    opts.Database.DB(),
-		cache: opts.Cache,
+		db:     opts.Database.DB(),
+		cache:  opts.Cache,
+		logger: opts.Logger,
+	}
+}
+
+func safeRollback(trx *sql.Tx, l logger.Logger) {
+	if err := recover(); err != nil {
+		if trxErr := trx.Rollback(); trxErr != nil && errors.Is(trxErr, sql.ErrTxDone) {
+			l.Error("rollback after panic", logger.Field{Key: "error", Value: fmt.Sprintf("trx err: %s; (original: %v)", trxErr, err)})
+		}
+	}
+	if err := trx.Rollback(); err != nil && errors.Is(err, sql.ErrTxDone) {
+		l.Error("transation failed", logger.Field{Key: "error", Value: err.Error()})
 	}
 }
 
@@ -63,7 +80,8 @@ func (us *userService) Create(ctx context.Context, email, passwordHash string) e
 	if err != nil {
 		return err
 	}
-	defer trx.Rollback()
+	defer safeRollback(trx, us.logger)
+
 	_, err = trx.ExecContext(ctx, createUserQuery, email, passwordHash)
 	if err != nil {
 		return err
@@ -133,7 +151,8 @@ func (us *userService) UpdateStatus(ctx context.Context, id int, status string) 
 	if err != nil {
 		return err
 	}
-	defer trx.Rollback()
+	defer safeRollback(trx, us.logger)
+
 	_, err = trx.ExecContext(ctx, updateStatusQuery, status, id)
 	if err != nil {
 		return err
@@ -160,7 +179,8 @@ func (us *userService) UpdatePassword(ctx context.Context, id int, passwordHash 
 	if err != nil {
 		return err
 	}
-	defer trx.Rollback()
+	defer safeRollback(trx, us.logger)
+
 	_, err = trx.ExecContext(ctx, updatePasswordQuery, passwordHash, id)
 	if err != nil {
 		return err
@@ -187,7 +207,8 @@ func (us *userService) Delete(ctx context.Context, id int) error {
 	if err != nil {
 		return err
 	}
-	defer trx.Rollback()
+	defer safeRollback(trx, us.logger)
+
 	_, err = trx.ExecContext(ctx, deleteUserQuery, id)
 	if err != nil {
 		return err
