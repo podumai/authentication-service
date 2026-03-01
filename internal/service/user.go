@@ -61,7 +61,7 @@ func safeRollback(trx *sql.Tx, l logger.Logger) {
 			l.Error("rollback after panic", logger.Field{Key: "error", Value: fmt.Sprintf("trx err: %s; (original: %v)", trxErr, err)})
 		}
 	}
-	if err := trx.Rollback(); err != nil && errors.Is(err, sql.ErrTxDone) {
+	if err := trx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
 		l.Error("transation failed", logger.Field{Key: "error", Value: err.Error()})
 	}
 }

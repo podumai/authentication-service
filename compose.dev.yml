@@ -24,7 +24,7 @@ services:
     environment:
       SWAGGER_JSON: /app/auth.swagger.json
     volumes:
-      - ./swagger:/app:ro
+      - ./swagger/auth:/app:ro
     ports:
       - 8083:8080
     networks:
